@@ -4,13 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NAHVG Kontakte</title>
+    
+    <link rel="apple-touch-icon" href="logo.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <link rel="icon" type="image/png" href="logo.png">
+
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <style>
         :root {
             --nahvg-blue: #00549f;
             --nahvg-light-blue: #e6f0f8;
             --nahvg-gray: #f4f4f4;
-            --nahvg-yellow: #ffcc00; /* Gelb für den Sammel-Button */
+            --nahvg-yellow: #ffcc00;
             --text-dark: #333;
             --white: #ffffff;
         }
@@ -32,18 +38,11 @@
             padding: 1.5rem 1rem;
             text-align: center;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
         }
 
-        .header-logo {
-            max-height: 80px;
-            width: auto;
-            border-radius: 8px;
-            background: white;
-            padding: 5px;
+        header h1 {
+            margin: 0;
+            font-size: 1.5rem;
         }
 
         .container {
@@ -109,7 +108,6 @@
             border-left: 5px solid var(--nahvg-blue);
             padding: 20px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            transition: transform 0.2s;
         }
 
         .card h3 {
@@ -152,6 +150,7 @@
         }
 
         .btn {
+            flex: 1;
             padding: 10px;
             border: none;
             border-radius: 4px;
@@ -164,20 +163,15 @@
             font-size: 0.9rem;
         }
 
-        .btn-call { background-color: var(--nahvg-blue); color: white; flex: 1; }
-        .btn-mail { background-color: #f0f0f0; color: var(--nahvg-blue); border: 1px solid var(--nahvg-blue); flex: 1; }
-        
+        .btn-call { background-color: var(--nahvg-blue); color: white; }
+        .btn-mail { background-color: #f0f0f0; color: var(--nahvg-blue); border: 1px solid var(--nahvg-blue); }
+
         .btn-bulk-mail { 
             background-color: var(--nahvg-yellow); 
-            color: var(--nahvg-blue); /* Dunkelblauer Text auf Gelb */
+            color: var(--nahvg-blue);
             padding: 10px 25px;
-            font-size: 1rem;
             border: 1px solid #e6b800;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .btn-bulk-mail:hover { 
-            background-color: #ffd633;
-            transform: translateY(-1px);
+            display: none; /* Wird via JS gezeigt */
         }
 
         footer {
@@ -206,13 +200,12 @@
 <body>
 
 <header>
-    <img src="logo.png" alt="NAHVG Logo" class="header-logo" onerror="this.style.display='none'">
     <h1>NAHVG Kontakte</h1>
 </header>
 
 <div class="container">
     <div id="upload-ui" class="upload-section">
-        <p>Datei manuell wählen:</p>
+        <p>Datei wählen:</p>
         <input type="file" id="file-input" accept=".xlsx, .xls">
     </div>
 
@@ -223,9 +216,7 @@
                 <option value="all">Alle Bereiche</option>
             </select>
         </div>
-        <button id="bulk-mail-btn" class="btn btn-bulk-mail">
-            Sammel-E-Mail an Auswahl
-        </button>
+        <button id="bulk-mail-btn" class="btn btn-bulk-mail">Sammel-E-Mail an Auswahl</button>
     </div>
     
     <div id="status-message">Suche "nahvg_kontakte.xlsx"...</div>
@@ -233,7 +224,7 @@
 </div>
 
 <footer>
-    Entwickler: Marcus Hörnemann | Version: 1.2.1
+    Entwickler: Marcus Hörnemann | Version: 1.2.2
 </footer>
 
 <div id="toast" class="copy-toast">E-Mail kopiert!</div>
@@ -246,28 +237,24 @@
     async function autoLoad() {
         try {
             const response = await fetch(EXCEL_FILE);
-            if (!response.ok) throw new Error('CORS oder Datei fehlt');
+            if (!response.ok) throw new Error();
             const data = await response.arrayBuffer();
             processExcel(data);
         } catch (e) {
-            console.warn("Automatisches Laden fehlgeschlagen.");
             document.getElementById('status-message').innerText = "";
             document.getElementById('upload-ui').style.display = 'block';
         }
     }
 
-    document.getElementById('file-input').addEventListener('change', (e) => {
-        const file = e.target.files[0];
+    document.getElementById('file-input').onchange = (e) => {
         const reader = new FileReader();
-        reader.onload = (event) => processExcel(event.target.result);
-        reader.readAsArrayBuffer(file);
-    });
+        reader.onload = (ev) => processExcel(ev.target.result);
+        reader.readAsArrayBuffer(e.target.files[0]);
+    };
 
     function processExcel(buffer) {
-        const data = new Uint8Array(buffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        allContacts = XLSX.utils.sheet_to_json(sheet);
+        const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+        allContacts = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
         currentFiltered = allContacts;
         
         setupFilter(allContacts);
@@ -281,37 +268,30 @@
     function setupFilter(contacts) {
         const select = document.getElementById('bereich-filter');
         const bereiche = [...new Set(contacts.map(c => c.Bereich).filter(b => b))];
-        
         select.innerHTML = '<option value="all">Alle Bereiche</option>';
         bereiche.sort().forEach(b => {
             const opt = document.createElement('option');
-            opt.value = b;
-            opt.textContent = b;
+            opt.value = opt.textContent = b;
             select.appendChild(opt);
         });
 
-        select.addEventListener('change', (e) => {
-            const val = e.target.value;
-            currentFiltered = val === 'all' 
+        select.onchange = (e) => {
+            currentFiltered = e.target.value === 'all' 
                 ? allContacts 
-                : allContacts.filter(c => c.Bereich === val);
+                : allContacts.filter(c => c.Bereich === e.target.value);
             renderContacts(currentFiltered);
-            updateBulkMailButton();
-        });
-
-        document.getElementById('bulk-mail-btn').addEventListener('click', sendBulkMail);
+        };
+        document.getElementById('bulk-mail-btn').onclick = sendBulkMail;
     }
 
     function renderContacts(contacts) {
         const grid = document.getElementById('contact-grid');
         grid.innerHTML = '';
-
         contacts.forEach(c => {
             const card = document.createElement('div');
             card.className = 'card';
-            const phone = c.Mobil || c.Telefon || '';
             const email = c.Email || c['E-Mail'] || '';
-            
+            const phone = c.Mobil || c.Telefon || '';
             card.innerHTML = `
                 <h3>${c.Vorname || ''} ${c.Name || ''}</h3>
                 <div class="position">${c.Position || ''}</div>
@@ -319,7 +299,7 @@
                 <div class="info"><strong>Tel:</strong> ${c.Telefon || '-'}</div>
                 <div class="info"><strong>Mobil:</strong> ${c.Mobil || '-'}</div>
                 <div class="info"><strong>E-Mail:</strong> ${email || '-'}</div>
-                <div class="tag">${c['Ansprechpartner für'] || 'Zuständigkeit n.a.'}</div>
+                <div class="tag">${c['Ansprechpartner für'] || ''}</div>
                 <div class="actions">
                     ${phone ? `<a href="tel:${phone}" class="btn btn-call">Anrufen</a>` : ''}
                     <button class="btn btn-mail" onclick="handleMail('${email}')">E-Mail</button>
@@ -327,10 +307,6 @@
             `;
             grid.appendChild(card);
         });
-        updateBulkMailButton();
-    }
-
-    function updateBulkMailButton() {
         const btn = document.getElementById('bulk-mail-btn');
         const count = currentFiltered.filter(c => c.Email || c['E-Mail']).length;
         btn.textContent = `Sammel-E-Mail an Auswahl (${count})`;
@@ -338,25 +314,19 @@
     }
 
     function sendBulkMail() {
-        const emails = currentFiltered
-            .map(c => c.Email || c['E-Mail'])
-            .filter(e => e && e !== 'undefined');
-        
-        if (emails.length === 0) return;
-        const mailtoLink = `mailto:?bcc=${emails.join(',')}`;
-        window.location.href = mailtoLink;
+        const emails = currentFiltered.map(c => c.Email || c['E-Mail']).filter(e => e && e !== 'undefined');
+        if (emails.length) window.location.href = `mailto:?bcc=${emails.join(',')}`;
     }
 
     function handleMail(email) {
         if (!email || email === 'undefined') return;
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        if (isMobile) {
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
             window.location.href = `mailto:${email}`;
         } else {
             navigator.clipboard.writeText(email).then(() => {
-                const toast = document.getElementById('toast');
-                toast.style.display = 'block';
-                setTimeout(() => { toast.style.display = 'none'; }, 2000);
+                const t = document.getElementById('toast');
+                t.style.display = 'block';
+                setTimeout(() => t.style.display = 'none', 2000);
             });
         }
     }
