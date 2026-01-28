@@ -10,6 +10,7 @@
             --nahvg-blue: #00549f;
             --nahvg-light-blue: #e6f0f8;
             --nahvg-gray: #f4f4f4;
+            --nahvg-yellow: #ffcc00; /* Gelb für den Sammel-Button */
             --text-dark: #333;
             --white: #ffffff;
         }
@@ -45,16 +46,39 @@
             padding: 5px;
         }
 
-        header h1 {
-            margin: 0;
-            font-size: 1.5rem;
-        }
-
         .container {
             max-width: 1200px;
             margin: 20px auto;
             padding: 0 15px;
             flex: 1;
+        }
+
+        .filter-section {
+            background: var(--white);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .filter-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        select {
+            padding: 8px 15px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 1rem;
+            min-width: 200px;
         }
 
         .upload-section {
@@ -96,8 +120,14 @@
         .card .position {
             font-size: 0.9rem;
             font-weight: bold;
-            color: #666;
+            color: #444;
+        }
+
+        .card .bereich {
+            font-size: 0.85rem;
+            color: #777;
             margin-bottom: 10px;
+            font-style: italic;
         }
 
         .card .info {
@@ -122,7 +152,6 @@
         }
 
         .btn {
-            flex: 1;
             padding: 10px;
             border: none;
             border-radius: 4px;
@@ -135,8 +164,21 @@
             font-size: 0.9rem;
         }
 
-        .btn-call { background-color: var(--nahvg-blue); color: white; }
-        .btn-mail { background-color: #f0f0f0; color: var(--nahvg-blue); border: 1px solid var(--nahvg-blue); }
+        .btn-call { background-color: var(--nahvg-blue); color: white; flex: 1; }
+        .btn-mail { background-color: #f0f0f0; color: var(--nahvg-blue); border: 1px solid var(--nahvg-blue); flex: 1; }
+        
+        .btn-bulk-mail { 
+            background-color: var(--nahvg-yellow); 
+            color: var(--nahvg-blue); /* Dunkelblauer Text auf Gelb */
+            padding: 10px 25px;
+            font-size: 1rem;
+            border: 1px solid #e6b800;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .btn-bulk-mail:hover { 
+            background-color: #ffd633;
+            transform: translateY(-1px);
+        }
 
         footer {
             text-align: center;
@@ -170,8 +212,20 @@
 
 <div class="container">
     <div id="upload-ui" class="upload-section">
-        <p>Browser-Sicherheit blockiert autom. Laden. Bitte Datei wählen:</p>
+        <p>Datei manuell wählen:</p>
         <input type="file" id="file-input" accept=".xlsx, .xls">
+    </div>
+
+    <div id="filter-container" class="filter-section" style="display: none;">
+        <div class="filter-controls">
+            <label for="bereich-filter">Filter nach Bereich:</label>
+            <select id="bereich-filter">
+                <option value="all">Alle Bereiche</option>
+            </select>
+        </div>
+        <button id="bulk-mail-btn" class="btn btn-bulk-mail">
+            Sammel-E-Mail an Auswahl
+        </button>
     </div>
     
     <div id="status-message">Suche "nahvg_kontakte.xlsx"...</div>
@@ -179,13 +233,15 @@
 </div>
 
 <footer>
-    Entwickler: Marcus Hörnemann | Version: 1.0.1
+    Entwickler: Marcus Hörnemann | Version: 1.2.1
 </footer>
 
 <div id="toast" class="copy-toast">E-Mail kopiert!</div>
 
 <script>
     const EXCEL_FILE = 'nahvg_kontakte.xlsx';
+    let allContacts = [];
+    let currentFiltered = [];
 
     async function autoLoad() {
         try {
@@ -194,7 +250,7 @@
             const data = await response.arrayBuffer();
             processExcel(data);
         } catch (e) {
-            console.warn("Automatisches Laden fehlgeschlagen. Zeige Datei-Upload.");
+            console.warn("Automatisches Laden fehlgeschlagen.");
             document.getElementById('status-message').innerText = "";
             document.getElementById('upload-ui').style.display = 'block';
         }
@@ -211,11 +267,39 @@
         const data = new Uint8Array(buffer);
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const contacts = XLSX.utils.sheet_to_json(sheet);
+        allContacts = XLSX.utils.sheet_to_json(sheet);
+        currentFiltered = allContacts;
         
-        renderContacts(contacts);
+        setupFilter(allContacts);
+        renderContacts(allContacts);
+        
         document.getElementById('upload-ui').style.display = 'none';
         document.getElementById('status-message').style.display = 'none';
+        document.getElementById('filter-container').style.display = 'flex';
+    }
+
+    function setupFilter(contacts) {
+        const select = document.getElementById('bereich-filter');
+        const bereiche = [...new Set(contacts.map(c => c.Bereich).filter(b => b))];
+        
+        select.innerHTML = '<option value="all">Alle Bereiche</option>';
+        bereiche.sort().forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b;
+            opt.textContent = b;
+            select.appendChild(opt);
+        });
+
+        select.addEventListener('change', (e) => {
+            const val = e.target.value;
+            currentFiltered = val === 'all' 
+                ? allContacts 
+                : allContacts.filter(c => c.Bereich === val);
+            renderContacts(currentFiltered);
+            updateBulkMailButton();
+        });
+
+        document.getElementById('bulk-mail-btn').addEventListener('click', sendBulkMail);
     }
 
     function renderContacts(contacts) {
@@ -231,6 +315,7 @@
             card.innerHTML = `
                 <h3>${c.Vorname || ''} ${c.Name || ''}</h3>
                 <div class="position">${c.Position || ''}</div>
+                <div class="bereich">${c.Bereich || ''}</div>
                 <div class="info"><strong>Tel:</strong> ${c.Telefon || '-'}</div>
                 <div class="info"><strong>Mobil:</strong> ${c.Mobil || '-'}</div>
                 <div class="info"><strong>E-Mail:</strong> ${email || '-'}</div>
@@ -242,12 +327,29 @@
             `;
             grid.appendChild(card);
         });
+        updateBulkMailButton();
+    }
+
+    function updateBulkMailButton() {
+        const btn = document.getElementById('bulk-mail-btn');
+        const count = currentFiltered.filter(c => c.Email || c['E-Mail']).length;
+        btn.textContent = `Sammel-E-Mail an Auswahl (${count})`;
+        btn.style.display = count > 0 ? 'block' : 'none';
+    }
+
+    function sendBulkMail() {
+        const emails = currentFiltered
+            .map(c => c.Email || c['E-Mail'])
+            .filter(e => e && e !== 'undefined');
+        
+        if (emails.length === 0) return;
+        const mailtoLink = `mailto:?bcc=${emails.join(',')}`;
+        window.location.href = mailtoLink;
     }
 
     function handleMail(email) {
         if (!email || email === 'undefined') return;
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
         if (isMobile) {
             window.location.href = `mailto:${email}`;
         } else {
