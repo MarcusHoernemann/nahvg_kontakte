@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAHVG Kontakte</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --nahvg-blue: #00549f;
+            --nahvg-light-blue: #e6f0f8;
+            --nahvg-gray: #f4f4f4;
+            --text-dark: #333;
+            --white: #ffffff;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--nahvg-gray);
+            margin: 0;
+            padding: 0;
+            color: var(--text-dark);
+        }
+
+        header {
+            background-color: var(--nahvg-blue);
+            color: var(--white);
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 15px;
+        }
+
+        .upload-section {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: var(--white);
+            border-radius: 8px;
+            display: none; /* Standardmäßig aus, wird nur bei Fehler gezeigt */
+        }
+
+        #status-message {
+            text-align: center;
+            padding: 10px;
+            color: #666;
+        }
+
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--white);
+            border-radius: 8px;
+            border-left: 5px solid var(--nahvg-blue);
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+
+        .card h3 {
+            margin: 0 0 5px 0;
+            color: var(--nahvg-blue);
+        }
+
+        .card .position {
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .card .info {
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+        }
+
+        .card .tag {
+            display: inline-block;
+            background: var(--nahvg-light-blue);
+            color: var(--nahvg-blue);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-top: 10px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .btn-call { background-color: var(--nahvg-blue); color: white; }
+        .btn-mail { background-color: #f0f0f0; color: var(--nahvg-blue); border: 1px solid var(--nahvg-blue); }
+
+        .copy-toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            display: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>NAHVG Kontakte</h1>
+</header>
+
+<div class="container">
+    <div id="upload-ui" class="upload-section">
+        <p>Browser-Sicherheit blockiert autom. Laden. Bitte Datei wählen:</p>
+        <input type="file" id="file-input" accept=".xlsx, .xls">
+    </div>
+    
+    <div id="status-message">Suche "nahvg_kontakte.xlsx"...</div>
+    <div id="contact-grid" class="contact-grid"></div>
+</div>
+
+<div id="toast" class="copy-toast">E-Mail kopiert!</div>
+
+<script>
+    const EXCEL_FILE = 'nahvg_kontakte.xlsx';
+
+    // 1. Automatischer Ladeversuch (funktioniert auf Servern)
+    async function autoLoad() {
+        try {
+            const response = await fetch(EXCEL_FILE);
+            if (!response.ok) throw new Error('CORS oder Datei fehlt');
+            const data = await response.arrayBuffer();
+            processExcel(data);
+        } catch (e) {
+            console.warn("Automatisches Laden fehlgeschlagen. Zeige Datei-Upload.");
+            document.getElementById('status-message').innerText = "";
+            document.getElementById('upload-ui').style.display = 'block';
+        }
+    }
+
+    // 2. Manueller Ladeversuch (funktioniert immer lokal)
+    document.getElementById('file-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => processExcel(event.target.result);
+        reader.readAsArrayBuffer(file);
+    });
+
+    function processExcel(buffer) {
+        const data = new Uint8Array(buffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const contacts = XLSX.utils.sheet_to_json(sheet);
+        
+        renderContacts(contacts);
+        document.getElementById('upload-ui').style.display = 'none';
+        document.getElementById('status-message').style.display = 'none';
+    }
+
+    function renderContacts(contacts) {
+        const grid = document.getElementById('contact-grid');
+        grid.innerHTML = '';
+
+        contacts.forEach(c => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            const phone = c.Mobil || c.Telefon || '';
+            const email = c.Email || c['E-Mail'] || '';
+            
+            card.innerHTML = `
+                <h3>${c.Vorname || ''} ${c.Name || ''}</h3>
+                <div class="position">${c.Position || ''}</div>
+                <div class="info"><strong>Tel:</strong> ${c.Telefon || '-'}</div>
+                <div class="info"><strong>Mobil:</strong> ${c.Mobil || '-'}</div>
+                <div class="info"><strong>E-Mail:</strong> ${email || '-'}</div>
+                <div class="tag">${c['Ansprechpartner für'] || 'Zuständigkeit n.a.'}</div>
+                <div class="actions">
+                    ${phone ? `<a href="tel:${phone}" class="btn btn-call">Anrufen</a>` : ''}
+                    <button class="btn btn-mail" onclick="handleMail('${email}')">E-Mail</button>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    }
+
+    function handleMail(email) {
+        if (!email || email === 'undefined') return;
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        if (isMobile) {
+            window.location.href = `mailto:${email}`;
+        } else {
+            navigator.clipboard.writeText(email).then(() => {
+                const toast = document.getElementById('toast');
+                toast.style.display = 'block';
+                setTimeout(() => { toast.style.display = 'none'; }, 2000);
+            });
+        }
+    }
+
+    window.onload = autoLoad;
+</script>
+
+</body>
+</html>
