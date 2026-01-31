@@ -122,13 +122,7 @@
             font-size: 0.9rem;
             font-weight: bold;
             color: #444;
-        }
-
-        .card .bereich {
-            font-size: 0.85rem;
-            color: #777;
-            margin-bottom: 10px;
-            font-style: italic;
+            margin-bottom: 5px;
         }
 
         .card .info {
@@ -222,9 +216,9 @@
 
     <div id="filter-container" class="filter-section" style="display: none;">
         <div class="filter-controls">
-            <label for="bereich-filter">Filter nach Bereich:</label>
-            <select id="bereich-filter">
-                <option value="all">Alle Bereiche</option>
+            <label for="pos-filter">Filter nach Position:</label>
+            <select id="pos-filter">
+                <option value="all">Alle Positionen</option>
             </select>
         </div>
         <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
@@ -238,7 +232,7 @@
 </div>
 
 <footer>
-    Entwickler: Marcus Hörnemann | Version: 1.2.3
+    Entwickler: Marcus Hörnemann | Version: 1.2.5
 </footer>
 
 <div id="toast" class="copy-toast">E-Mail kopiert!</div>
@@ -252,8 +246,6 @@
     let allContacts = [];
     let currentFiltered = [];
 
-    // --- IndexedDB Logik ---
-    
     function openDB() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -288,8 +280,6 @@
         tx.objectStore(STORE_NAME).delete('latest_excel');
         location.reload();
     }
-
-    // --- Core Logik ---
 
     async function initApp() {
         const cachedData = await loadFromDB();
@@ -338,19 +328,21 @@
     }
 
     function setupFilter(contacts) {
-        const select = document.getElementById('bereich-filter');
-        const bereiche = [...new Set(contacts.map(c => c.Bereich).filter(b => b))];
-        select.innerHTML = '<option value="all">Alle Bereiche</option>';
-        bereiche.sort().forEach(b => {
+        const select = document.getElementById('pos-filter');
+        // Hier wird nun explizit nach der Spalte "Position" gefiltert
+        const positionen = [...new Set(contacts.map(c => c.Position).filter(p => p))];
+        
+        select.innerHTML = '<option value="all">Alle Positionen</option>';
+        positionen.sort().forEach(p => {
             const opt = document.createElement('option');
-            opt.value = opt.textContent = b;
+            opt.value = opt.textContent = p;
             select.appendChild(opt);
         });
 
         select.onchange = (e) => {
             currentFiltered = e.target.value === 'all' 
                 ? allContacts 
-                : allContacts.filter(c => c.Bereich === e.target.value);
+                : allContacts.filter(c => c.Position === e.target.value);
             renderContacts(currentFiltered);
         };
         document.getElementById('bulk-mail-btn').onclick = sendBulkMail;
@@ -367,7 +359,6 @@
             card.innerHTML = `
                 <h3>${c.Vorname || ''} ${c.Name || ''}</h3>
                 <div class="position">${c.Position || ''}</div>
-                <div class="bereich">${c.Bereich || ''}</div>
                 <div class="info"><strong>Tel:</strong> ${c.Telefon || '-'}</div>
                 <div class="info"><strong>Mobil:</strong> ${c.Mobil || '-'}</div>
                 <div class="info"><strong>E-Mail:</strong> ${email || '-'}</div>
@@ -403,7 +394,6 @@
         }
     }
 
-    // --- Service Worker Registrierung ---
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('./sw.js')
