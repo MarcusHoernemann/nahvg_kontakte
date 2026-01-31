@@ -205,6 +205,7 @@
             border-radius: 20px;
             display: none;
             z-index: 1000;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
     </style>
 </head>
@@ -238,7 +239,7 @@
 </div>
 
 <footer>
-    Entwickler: Marcus Hörnemann | Version: 1.2.3
+    Entwickler: Marcus Hörnemann | Version: 1.2.4
 </footer>
 
 <div id="toast" class="copy-toast">E-Mail kopiert!</div>
@@ -387,7 +388,12 @@
 
     function sendBulkMail() {
         const emails = currentFiltered.map(c => c.Email || c['E-Mail']).filter(e => e && e !== 'undefined');
-        if (emails.length) window.location.href = `mailto:?bcc=${emails.join(',')}`;
+        if (emails.length) {
+            const emailString = emails.join(',');
+            // Kopiere in Zwischenablage UND öffne Mail Programm
+            copyTextToClipboard(emailString, `Sammel-Mail (${emails.length} Adressen) kopiert!`);
+            window.location.href = `mailto:?bcc=${emailString}`;
+        }
     }
 
     function handleMail(email) {
@@ -395,12 +401,55 @@
         if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
             window.location.href = `mailto:${email}`;
         } else {
-            navigator.clipboard.writeText(email).then(() => {
-                const t = document.getElementById('toast');
-                t.style.display = 'block';
-                setTimeout(() => t.style.display = 'none', 2000);
-            });
+            copyTextToClipboard(email, "E-Mail Adresse kopiert!");
+            // Optional: Fenster trotzdem öffnen
+            window.location.href = `mailto:${email}`;
         }
+    }
+
+    // --- Robuste Kopier-Funktion ---
+    function copyTextToClipboard(text, successMsg) {
+        if (!navigator.clipboard) {
+            fallbackCopyTextToClipboard(text, successMsg);
+            return;
+        }
+        navigator.clipboard.writeText(text).then(() => {
+            showToast(successMsg);
+        }, (err) => {
+            console.error('Fehler bei Clipboard API: ', err);
+            fallbackCopyTextToClipboard(text, successMsg);
+        });
+    }
+
+    function fallbackCopyTextToClipboard(text, successMsg) {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        
+        // Verhindert Scrollen und macht Element unsichtbar
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) showToast(successMsg);
+        } catch (err) {
+            console.error('Fallback Kopieren fehlgeschlagen', err);
+        }
+
+        document.body.removeChild(textArea);
+    }
+
+    function showToast(message) {
+        const t = document.getElementById('toast');
+        t.textContent = message;
+        t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 2500);
     }
 
     // --- Service Worker Registrierung ---
