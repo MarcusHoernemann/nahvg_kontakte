@@ -3,16 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NAHVG Kontakte</title>
+    <title>NAHVG Kontakte - Offline</title>
     
-    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#00549f">
-    <link rel="apple-touch-icon" href="logo.png">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
-    <link rel="icon" type="image/png" href="logo.png">
 
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <style>
         :root {
             --nahvg-blue: #00549f;
@@ -86,10 +82,10 @@
         .upload-section {
             text-align: center;
             margin-bottom: 20px;
-            padding: 20px;
+            padding: 40px;
             background: var(--white);
             border-radius: 8px;
-            display: none;
+            border: 2px dashed var(--nahvg-blue);
         }
 
         #status-message {
@@ -111,7 +107,10 @@
             border-left: 5px solid var(--nahvg-blue);
             padding: 20px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
         }
+
+        .card:hover { transform: translateY(-2px); }
 
         .card h3 {
             margin: 0 0 5px 0;
@@ -205,7 +204,6 @@
             border-radius: 20px;
             display: none;
             z-index: 1000;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
     </style>
 </head>
@@ -216,50 +214,54 @@
 </header>
 
 <div class="container">
-    <div id="upload-ui" class="upload-section">
-        <p>Keine lokalen Daten gefunden. Bitte Excel-Datei wählen:</p>
+    <div id="upload-ui" class="upload-section" style="display: none;">
+        <h3>Lokale Datenbank leer</h3>
+        <p>Bitte wählen Sie die <strong>nahvg_kontakte.xlsx</strong> Datei aus, um das Tool zu initialisieren.</p>
         <input type="file" id="file-input" accept=".xlsx, .xls">
     </div>
 
     <div id="filter-container" class="filter-section" style="display: none;">
         <div class="filter-controls">
-            <label for="bereich-filter">Filter nach Bereich:</label>
+            <label for="bereich-filter">Bereich filtern:</label>
             <select id="bereich-filter">
                 <option value="all">Alle Bereiche</option>
             </select>
         </div>
         <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
             <button id="bulk-mail-btn" class="btn btn-bulk-mail">Sammel-E-Mail</button>
-            <button id="reset-db" class="btn btn-reset">Datei neu laden / Cache leeren</button>
+            <button id="reset-db" class="btn btn-reset">Datenbank leeren & Datei neu wählen</button>
         </div>
     </div>
     
-    <div id="status-message">Prüfe lokale Datenbank...</div>
+    <div id="status-message">Suche gespeicherte Daten...</div>
     <div id="contact-grid" class="contact-grid"></div>
 </div>
 
 <footer>
-    Entwickler: Marcus Hörnemann | Version: 1.2.4
+    NAHVG Info Tool | Marcus Hörnemann | Version 1.3.0 (Vollständige Offline-Edition)
 </footer>
 
 <div id="toast" class="copy-toast">E-Mail kopiert!</div>
 
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
 <script>
-    const EXCEL_FILE = 'nahvg_kontakte.xlsx';
     const DB_NAME = 'NahvgDB';
-    const DB_VERSION = 1;
     const STORE_NAME = 'excel_store';
+    const DB_VERSION = 1;
     
     let allContacts = [];
     let currentFiltered = [];
 
-    // --- IndexedDB Logik ---
-    
+    // --- IndexedDB für lokale Speicherung ---
     function openDB() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
             request.onupgradeneeded = (e) => {
-                e.target.result.createObjectStore(STORE_NAME);
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME);
+                }
             };
             request.onsuccess = (e) => resolve(e.target.result);
             request.onerror = (e) => reject(e.target.error);
@@ -270,50 +272,47 @@
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         tx.objectStore(STORE_NAME).put(data, 'latest_excel');
-        return tx.complete;
+        return new Promise(r => tx.oncomplete = r);
     }
 
     async function loadFromDB() {
-        const db = await openDB();
-        return new Promise((resolve) => {
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const request = tx.objectStore(STORE_NAME).get('latest_excel');
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => resolve(null);
-        });
+        try {
+            const db = await openDB();
+            return new Promise((resolve) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const request = tx.objectStore(STORE_NAME).get('latest_excel');
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => resolve(null);
+            });
+        } catch(e) { return null; }
     }
 
     async function clearDB() {
-        const db = await openDB();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).delete('latest_excel');
-        location.reload();
+        if(confirm("Möchten Sie die gespeicherten Daten wirklich löschen?")) {
+            const db = await openDB();
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).delete('latest_excel');
+            tx.oncomplete = () => location.reload();
+        }
     }
 
-    // --- Core Logik ---
-
+    // --- Verarbeitung ---
     async function initApp() {
         const cachedData = await loadFromDB();
         if (cachedData) {
             processExcel(cachedData, false);
-            return;
-        }
-
-        try {
-            const response = await fetch(EXCEL_FILE);
-            if (!response.ok) throw new Error();
-            const data = await response.arrayBuffer();
-            processExcel(data, true);
-        } catch (e) {
+        } else {
             document.getElementById('status-message').innerText = "";
             document.getElementById('upload-ui').style.display = 'block';
         }
     }
 
     document.getElementById('file-input').onchange = (e) => {
+        const file = e.target.files[0];
+        if(!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => processExcel(ev.target.result, true);
-        reader.readAsArrayBuffer(e.target.files[0]);
+        reader.readAsArrayBuffer(file);
     };
 
     document.getElementById('reset-db').onclick = clearDB;
@@ -321,7 +320,8 @@
     function processExcel(buffer, shouldSave) {
         try {
             const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
-            allContacts = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            allContacts = XLSX.utils.sheet_to_json(firstSheet);
             currentFiltered = allContacts;
             
             if (shouldSave) saveToDB(buffer);
@@ -333,7 +333,7 @@
             document.getElementById('status-message').style.display = 'none';
             document.getElementById('filter-container').style.display = 'flex';
         } catch (err) {
-            alert("Fehler beim Verarbeiten der Excel-Datei.");
+            alert("Fehler: Das Dateiformat ist ungültig oder die Excel ist beschädigt.");
             console.error(err);
         }
     }
@@ -364,7 +364,7 @@
             const card = document.createElement('div');
             card.className = 'card';
             const email = c.Email || c['E-Mail'] || '';
-            const phone = c.Mobil || c.Telefon || '';
+            const phone = String(c.Mobil || c.Telefon || '');
             card.innerHTML = `
                 <h3>${c.Vorname || ''} ${c.Name || ''}</h3>
                 <div class="position">${c.Position || ''}</div>
@@ -374,26 +374,21 @@
                 <div class="info"><strong>E-Mail:</strong> ${email || '-'}</div>
                 <div class="tag">${c['Ansprechpartner für'] || ''}</div>
                 <div class="actions">
-                    ${phone ? `<a href="tel:${phone}" class="btn btn-call">Anrufen</a>` : ''}
+                    ${phone && phone !== '-' ? `<a href="tel:${phone}" class="btn btn-call">Anrufen</a>` : ''}
                     <button class="btn btn-mail" onclick="handleMail('${email}')">E-Mail</button>
                 </div>
             `;
             grid.appendChild(card);
         });
         const btn = document.getElementById('bulk-mail-btn');
-        const count = currentFiltered.filter(c => c.Email || c['E-Mail']).length;
-        btn.textContent = `Sammel-E-Mail (${count})`;
-        btn.style.display = count > 0 ? 'block' : 'none';
+        const emailCount = currentFiltered.filter(c => c.Email || c['E-Mail']).length;
+        btn.textContent = `Sammel-E-Mail (${emailCount})`;
+        btn.style.display = emailCount > 0 ? 'block' : 'none';
     }
 
     function sendBulkMail() {
         const emails = currentFiltered.map(c => c.Email || c['E-Mail']).filter(e => e && e !== 'undefined');
-        if (emails.length) {
-            const emailString = emails.join(',');
-            // Kopiere in Zwischenablage UND öffne Mail Programm
-            copyTextToClipboard(emailString, `Sammel-Mail (${emails.length} Adressen) kopiert!`);
-            window.location.href = `mailto:?bcc=${emailString}`;
-        }
+        if (emails.length) window.location.href = `mailto:?bcc=${emails.join(',')}`;
     }
 
     function handleMail(email) {
@@ -401,64 +396,12 @@
         if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
             window.location.href = `mailto:${email}`;
         } else {
-            copyTextToClipboard(email, "E-Mail Adresse kopiert!");
-            // Optional: Fenster trotzdem öffnen
-            window.location.href = `mailto:${email}`;
+            navigator.clipboard.writeText(email).then(() => {
+                const t = document.getElementById('toast');
+                t.style.display = 'block';
+                setTimeout(() => t.style.display = 'none', 2000);
+            });
         }
-    }
-
-    // --- Robuste Kopier-Funktion ---
-    function copyTextToClipboard(text, successMsg) {
-        if (!navigator.clipboard) {
-            fallbackCopyTextToClipboard(text, successMsg);
-            return;
-        }
-        navigator.clipboard.writeText(text).then(() => {
-            showToast(successMsg);
-        }, (err) => {
-            console.error('Fehler bei Clipboard API: ', err);
-            fallbackCopyTextToClipboard(text, successMsg);
-        });
-    }
-
-    function fallbackCopyTextToClipboard(text, successMsg) {
-        const textArea = document.createElement("textarea");
-        textArea.value = text;
-        
-        // Verhindert Scrollen und macht Element unsichtbar
-        textArea.style.top = "0";
-        textArea.style.left = "0";
-        textArea.style.position = "fixed";
-        textArea.style.opacity = "0";
-
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-
-        try {
-            const successful = document.execCommand('copy');
-            if (successful) showToast(successMsg);
-        } catch (err) {
-            console.error('Fallback Kopieren fehlgeschlagen', err);
-        }
-
-        document.body.removeChild(textArea);
-    }
-
-    function showToast(message) {
-        const t = document.getElementById('toast');
-        t.textContent = message;
-        t.style.display = 'block';
-        setTimeout(() => t.style.display = 'none', 2500);
-    }
-
-    // --- Service Worker Registrierung ---
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('./sw.js')
-                .then(reg => console.log('SW registriert'))
-                .catch(err => console.log('SW Fehler', err));
-        });
     }
 
     window.onload = initApp;
